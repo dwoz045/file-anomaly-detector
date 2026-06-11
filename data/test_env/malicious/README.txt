@@ -1,0 +1,1 @@
+YOUR FILES HAVE BEEN ENCRYPTED. To decrypt your files send bitcoin to the following address.

@@ -41,12 +41,33 @@ def parse_args():
         default=None,
         help="Optional path to export full results as CSV"
     )
+        # --- monitor command ---
+    monitor_parser = subparsers.add_parser(
+        "monitor",
+        help="Continuously scan a directory and report changes between scans"
+    )
+    monitor_parser.add_argument(
+        "directory",
+        type=str,
+        help="Path to the directory to monitor"
+    )
+    monitor_parser.add_argument(
+        "--interval",
+        type=int,
+        default=60,
+        help="Seconds between scans (default: 60)"
+    )
+    monitor_parser.add_argument(
+        "--max-scans",
+        type=int,
+        default=None,
+        help="Stop after this many scans (default: run forever)"
+    )
     scan_parser.add_argument(
         "--save-model",
         action="store_true",
         help="Save the trained model to disk for reuse"
     )
-
     # --- rescan command (use saved model) ---
     rescan_parser = subparsers.add_parser(
         "rescan",
@@ -115,6 +136,31 @@ def run_rescan(directory: str, top: int, export: str):
     if export:
         export_csv(results, export)
 
+def run_monitor_command(directory: str, interval: int, max_scans: int):
+    from monitor import run_monitor, add_file_hashes
+    from model import train_model, score_files
+    from autoencoder import train_autoencoder, score_files_autoencoder, combined_anomaly_score
+    from yara_scanner import compile_rules, scan_dataframe
+
+    if not Path(directory).exists():
+        print(f"[error] Directory not found: {directory}")
+        sys.exit(1)
+
+    # Pre-compile YARA rules once before the loop
+    rules = compile_rules()
+
+    def full_scan(target_dir: str) -> pd.DataFrame:
+        """Full pipeline scan used by the monitor loop."""
+        df = scan_directory(target_dir)
+        model, scaler, clean_df = train_model(df)
+        results = score_files(clean_df, model, scaler)
+        ae_model, ae_scaler, threshold = train_autoencoder(clean_df)
+        results = score_files_autoencoder(results, ae_model, ae_scaler, threshold)
+        results = combined_anomaly_score(results)
+        results = scan_dataframe(results, rules)
+        return results
+
+    run_monitor(directory, full_scan, interval_seconds=interval, max_scans=max_scans)
 
 def main():
     args = parse_args()
@@ -128,12 +174,16 @@ def main():
             save=args.save_model
         )
 
+   
     elif args.command == "rescan":
         run_rescan(
             directory=args.directory,
             top=args.top,
             export=args.export
         )
+
+    elif args.command == "monitor":
+        run_monitor_command(args.directory, args.interval, args.max_scans)
 
 
 if __name__ == "__main__":
