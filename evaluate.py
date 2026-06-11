@@ -255,7 +255,83 @@ def run_evaluation():
 
     print_evaluation_report([if_result, ae_result, yara_result, ens_result])
 
+def build_large_labelled_dataset() -> pd.DataFrame:
+    clean_dir     = TEST_DIR / "clean_large"
+    malicious_dir = TEST_DIR / "malicious_large"
+
+    console.print("[evaluate] Scanning large clean dataset...")
+    clean_df = scan_directory(str(clean_dir))
+    clean_df["label"] = 0
+    clean_df["family"] = "clean"
+
+    console.print("[evaluate] Scanning malicious samples by family...")
+    family_dfs = []
+
+    for family_dir in sorted(malicious_dir.iterdir()):
+        if not family_dir.is_dir():
+            continue
+        fdf = scan_directory(str(family_dir))
+        if fdf.empty:
+            continue
+        fdf["label"] = 1
+        fdf["family"] = family_dir.name
+        family_dfs.append(fdf)
+        console.print(f"  [dim]{family_dir.name}: {len(fdf)} samples[/dim]")
+
+    mal_df = pd.concat(family_dfs, ignore_index=True)
+    combined = pd.concat([clean_df, mal_df], ignore_index=True)
+
+    console.print(
+        f"[evaluate] Dataset: {len(clean_df)} clean + "
+        f"{len(mal_df)} malicious = {len(combined)} total"
+    )
+    return combined
+
+
+def per_family_breakdown(results_df: pd.DataFrame, pred_col: str, model_name: str):
+    if "family" not in results_df.columns:
+        return
+
+    console.print(f"\n[bold dim]Detection rate by family — {model_name}:[/bold dim]")
+
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold dim")
+    table.add_column("Family",         width=30)
+    table.add_column("Samples",        width=10)
+    table.add_column("Detected",       width=10)
+    table.add_column("Detection Rate", width=16)
+
+    families = results_df[results_df["family"] != "clean"]["family"].unique()
+
+    for family in sorted(families):
+        fdf      = results_df[results_df["family"] == family]
+        total    = len(fdf)
+        detected = int(fdf[pred_col].sum())
+        rate     = detected / total if total > 0 else 0.0
+        colour   = "green" if rate >= 0.8 else "yellow" if rate >= 0.5 else "red"
+        table.add_row(family, str(total), str(detected), f"[{colour}]{rate:.1%}[/{colour}]")
+
+    console.print(table)
+
+
+def run_large_evaluation():
+    console.print("\n[bold green]═══ LARGE SCALE EVALUATION ═══[/bold green]\n")
+
+    df = build_large_labelled_dataset()
+
+    if_result   = evaluate_isolation_forest(df)
+    ae_result   = evaluate_autoencoder(df)
+    yara_result = evaluate_yara(df)
+    ens_result  = evaluate_ensemble(df, if_result, ae_result)
+    print_evaluation_report([if_result, ae_result, yara_result, ens_result])
+
+    yara_df          = yara_result["results_df"].copy()
+    yara_df["family"] = df["family"].values
+    per_family_breakdown(yara_df, "yara_hit", "YARA")
+
+    ae_df            = ae_result["results_df"].copy()
+    ae_df["family"]   = df["family"].values
+    per_family_breakdown(ae_df, "ae_is_anomaly", "Autoencoder")
+
 
 if __name__ == "__main__":
     run_large_evaluation()
-    run_evaluation()
