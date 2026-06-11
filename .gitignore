@@ -5,3 +5,5 @@ __pycache__/
 *.egg-info/
 dist/
 .env
+data/thezoo/
+data/test_env/malicious_large/
