@@ -85,7 +85,7 @@ def print_report(results: pd.DataFrame, top_n: int = 20):
     table.add_column("Reasons", overflow="fold")
 
     for _, row in flagged.head(top_n).iterrows():
-        label, colour = severity_label(row["anomaly_score"])
+        label, colour = severity_label(row)
         severity_text = Text(label, style=f"bold {colour}")
 
         table.add_row(
