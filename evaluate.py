@@ -331,7 +331,22 @@ def run_large_evaluation():
     ae_df            = ae_result["results_df"].copy()
     ae_df["family"]   = df["family"].values
     per_family_breakdown(ae_df, "ae_is_anomaly", "Autoencoder")
+    metrics = []
+    for r in [if_result, ae_result, yara_result, ens_result]:
+        tn, fp, fn, tp = r["confusion"].ravel()
+        metrics.append({
+            "model":     r["model"],
+            "precision": round(r["precision"], 4),
+            "recall":    round(r["recall"], 4),
+            "f1":        round(r["f1"], 4),
+            "auc_roc":   round(r["auc_roc"], 4),
+            "fpr":       round(fp / (fp + tn) if (fp + tn) > 0 else 0.0, 4),
+            "tp": int(tp), "fp": int(fp),
+            "tn": int(tn), "fn": int(fn),
+        })
 
+    pd.DataFrame(metrics).to_csv("data/evaluation_results.csv", index=False)
+    console.print("[dim]Metrics saved to data/evaluation_results.csv[/dim]")
 
 if __name__ == "__main__":
     run_large_evaluation()
